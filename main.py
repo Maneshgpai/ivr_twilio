@@ -15,10 +15,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY') # requires OpenAI Realtime API Access
 PORT = int(os.getenv('PORT', 5000))
 SYSTEM_MESSAGE = (
-    "You are a helpful and bubbly AI assistant who loves to chat about "
-    "anything the user is interested in and is prepared to offer them facts. "
-    "You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. "
-    "Always stay positive, but work in a joke when appropriate."
+    "You are a helpful and bubbly AI assistant who loves to chat about anything the user is interested in and is prepared to offer them facts. You have a penchant for dad jokes, owl jokes, and rickrolling subtly. Always stay positive, but work in a joke when appropriate. Your are to strictly talk only in Malayalam Language."
 )
 VOICE = 'alloy'
 LOG_EVENT_TYPES = [
@@ -42,7 +39,7 @@ async def handle_incoming_call(request: Request):
     """Handle incoming call and return TwiML response to connect to Media Stream."""
     response = VoiceResponse()
     # <Say> punctuation to improve text-to-speech flow
-    response.say("Please wait while we connect your call to the A. I. voice assistant, powered by Twilio and the Open-A.I. Realtime API")
+    response.say("Welcome to Virgolife Private Limited. This is a demo on IVR agent. Connecting you to the agent")
     response.pause(length=1)
     response.say("O.K. you can start talking!")
     host = request.url.hostname
