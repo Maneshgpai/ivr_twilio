@@ -49,8 +49,8 @@ Keep in mind that each time you run the `ngrok http` command, a new URL will be 
 To reduce cluttering your global Python environment on your machine, you can create a virtual environment. On your command line, enter:
 
 ```
-python3 -m venv env
-source env/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
 ### Install required packages
