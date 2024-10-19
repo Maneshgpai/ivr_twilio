@@ -28,6 +28,7 @@ To use the app, you will  need:
 There are 4 required steps and 1 optional step to get the app up-and-running locally for development and testing:
 1. Run ngrok or another tunneling solution to expose your local server to the internet for testing. Download ngrok [here](https://ngrok.com/).
 2. (optional) Create and use a virtual environment
+
 3. Install the packages
 4. Twilio setup
 5. Update the .env file
