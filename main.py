@@ -2,42 +2,35 @@ import os
 import json
 import base64
 import asyncio
+import twilio
 import websockets
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import HTMLResponse
 from fastapi.websockets import WebSocketDisconnect
 from twilio.twiml.voice_response import VoiceResponse, Connect, Say, Stream
 from dotenv import load_dotenv
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import os
+from twilio.rest import Client
 
 load_dotenv()
+
+# # Configure Twilio client to retrieve call information
+account_sid = os.environ["TWILIO_ACCOUNT_SID"]
+auth_token = os.environ["TWILIO_AUTH_TOKEN"]
+client = Client(account_sid, auth_token)
 
 # Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY') # requires OpenAI Realtime API Access
 PORT = int(os.getenv('PORT', 5000))
-
-
-## Test from normal my phone and call to Customer care
-## Clean UI for webphone
-## Clean UI to show below on screen
-    # Conversation transcript\
-    # Caller info - Phone nbr, I.P\
-    # Intent and questions asked - summarized\
-    # Keyword for interrupting (response.cancel)
-    # Pricing of every call - OpenAI charges + Monthly $7\
-    # Function call - Book appt on Google Calendar, Xfr call to Owner\
-    # At end of every call - logs entry in Database and sends a summary via email / whatsapp / CRM
-    # Can connect to FInance or Sales department, based on intent")
-
-## Identify the business areas where there are tons of calls, which could be automated by AI. 
-#   Which will pay, which I could have access to sales partners, which can show immediate benefit
-
-
 
 ## Business details
 WELCOME_MESSAGE = """Welcome to Virgolife Private Ltd, your destination for rare and vintage collectors' cars. How can I assist you today?"""
 company_name = """Virgolife"""
 company_descr = """Virgolife Private Ltd is a Delaware-based company that curates and sells rare, vintage, and collectors' editions of second-hand cars. Established in 1995, Virgolife has built a reputation for sourcing, restoring, and maintaining iconic automobiles from the 1950s through the 1980s. Our cars are sought after by collectors, enthusiasts, and hobbyists worldwide."""
 address = """Virgolife Private Limited, Delaware"""
+timezone = "America/New_York"
 website = """www.physikally.com"""
 car_inventory = """There are currently these cars - 
 1. 1957 Chevrolet Bel Air
@@ -49,8 +42,6 @@ Rarity: High. Iconic 1950s American classic
 Price: $75,000
 Availability: Immediate
 History: Award-winning restoration; known for its distinctive tailfins and chrome detailing.
-
-
 2. 1965 Ford Mustang Fastback
 Condition: Restored with original parts
 Color: Wimbledon White
@@ -60,7 +51,6 @@ Rarity: Medium. First-generation Mustang
 Price: $82,000
 Availability: Waitlist (2 months)
 History: Icon of American muscle cars; the perfect blend of performance and style.
-
 3. 1955 Mercedes-Benz 300SL Gullwing
     Condition: Original, preserved
     Color: Silver
@@ -78,21 +68,21 @@ finance_info = """Finance option is available. If customer is interested in know
 agent_name = """Virgo champion"""
 agent_tone = """Your tone should be human, friendly and approachable, conveying a love for classic cars while maintaining professionalism. Enthusiasts should feel like they are speaking with someone who shares their passion for preserving automotive history."""
 answer_style = """You are to keep your responses very brief, with short answers."""
+voice = 'alloy'
 
 SYSTEM_MESSAGE = f"""You are the intelligent voice response (IVR) agent with the name {agent_name}, working for the company {company_name}, assisting their customers with their inquiries. Your purpose is to streamline customer interactions, guide them to the right information, and ensure an exceptional customer experience. {company_descr}. Company is situated at {address}. The website is {website}\
 You are to answer to questions only if the answer is available below.
 {car_inventory}
 {customer_services_provided}
 {finance_info}
-You are to strictly follow the tone and style given here:{agent_tone}\{answer_style}
-Fallback Response:In case of any uncertainty or complex queries, politely inform the customer: "I'll need to transfer you to one of our vintage car specialists for more detailed assistance. Please hold while I connect you."\ """
+You are to strictly follow the tone and style given here:{agent_tone}{answer_style}
+Fallback Response:In case of any uncertainty or complex queries, politely inform the customer: "I'll need to transfer you to one of our vintage car specialists for more detailed assistance. Please hold while I connect you." """
 
-VOICE = 'alloy'
 LOG_EVENT_TYPES = [
     'response.content.done', 'rate_limits.updated', 'response.done',
     'input_audio_buffer.committed', 'input_audio_buffer.speech_stopped',
-    'input_audio_buffer.speech_started', 'session.created'
-]
+    'input_audio_buffer.speech_started', 'session.created']
+call_transcript = []
 
 app = FastAPI()
 
@@ -139,6 +129,7 @@ async def handle_media_stream(websocket: WebSocket):
             try:
                 async for message in websocket.iter_text():
                     data = json.loads(message)
+                    # print("data:",data)
                     if data['event'] == 'media' and openai_ws.open:
                         audio_append = {
                             "type": "input_audio_buffer.append",
@@ -147,9 +138,18 @@ async def handle_media_stream(websocket: WebSocket):
                         await openai_ws.send(json.dumps(audio_append))
                     elif data['event'] == 'start':
                         stream_sid = data['start']['streamSid']
-                        print(f"Incoming stream has started {stream_sid}")
+                        # print(f"Incoming stream has started {stream_sid}")
+                    elif data['event'] == 'stop':
+                        print("Client disconnected.")
+                        print("Complete transcription is:",str(call_transcript),"\n")
+                        call_sid = str(data['stop']['callSid'])
+                        # print(f"call_sid:{call_sid}")
+                        # call = client.calls(call_sid).fetch()
+                        # call_info = [{"From": call.from_formatted, "Call Status": call.status, "Caller ID": call.caller_name}, {"Total Duration": call.duration, "Start time": call.start_time, "End time": call.end_time}, {"Price": call.price,"Unit": call.price_unit}]
+                        # print(f"call_info, {str(call_info)}")
             except WebSocketDisconnect:
                 print("Client disconnected.")
+                # print("Complete transcription is:",str(call_transcript))
                 if openai_ws.open:
                     await openai_ws.close()
 
@@ -159,10 +159,18 @@ async def handle_media_stream(websocket: WebSocket):
             try:
                 async for openai_message in openai_ws:
                     response = json.loads(openai_message)
-                    if response['type'] in LOG_EVENT_TYPES:
-                        print(f"Received event: {response['type']}", response)
-                    if response['type'] == 'session.updated':
-                        print("Session updated successfully:", response)
+                    # print(f"ALL RESPONSES: {response['type']}", response['type'])
+                    # if response['type'] in LOG_EVENT_TYPES:
+                        # print(f"Received event: {response['type']}", response)
+                    # if response['type'] == 'session.updated':
+                        # print("Session updated successfully:", response)
+
+                    if response['type'] == 'conversation.item.input_audio_transcription.completed':
+                        # print("User transcript:",response['transcript'])
+                        call_transcript.append({"role": "user", "text": response['transcript'], "app": "ivr", "timestamp": datetime.now(ZoneInfo(timezone))})
+                    if response['type'] == 'response.audio_transcript.done':
+                        # print("Assistant transcript:",response['transcript'])
+                        call_transcript.append({"role": "assistant", "text": response['transcript'], "app": "ivr", "timestamp": datetime.now(ZoneInfo(timezone))})
                     if response['type'] == 'response.audio.delta' and response.get('delta'):
                         # Audio from OpenAI
                         try:
@@ -190,14 +198,14 @@ async def send_session_update(openai_ws):
             "turn_detection": {"type": "server_vad","threshold": 0.5,"prefix_padding_ms": 300,"silence_duration_ms": 600}, #Activation threshold for VAD (0.0 to 1.0).Amount of audio to include before speech starts (in milliseconds).
             "input_audio_format": "g711_ulaw",
             "output_audio_format": "g711_ulaw",
-            "voice": VOICE,
+            "voice": voice,
             "instructions": SYSTEM_MESSAGE,
             "modalities": ["text", "audio"],
             "temperature": 0.6,
-            # "input_audio_transcription":
+            "input_audio_transcription": {"model": "whisper-1"},
         }
     }
-    print('Sending session update:', json.dumps(session_update))
+    # print('Sending session update:', json.dumps(session_update))
     await openai_ws.send(json.dumps(session_update))
 
 if __name__ == "__main__":
@@ -234,3 +242,17 @@ if __name__ == "__main__":
 #   tool_choice="auto"
 # )
 # print(completion)
+
+
+# Web dialier to dial required US number only, without showing the number
+# Show Caller info - Phone nbr, I.P
+# Show usage & cost (openAI, Twilio)
+# Function call - Book appt on Google Calendar
+    # search for caller number
+    # create user profile
+    # Xfr call to Owner or Dept
+
+
+
+
+# https://ivr-twilio.onrender.com/incoming-call
